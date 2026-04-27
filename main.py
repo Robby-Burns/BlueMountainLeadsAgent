@@ -1,6 +1,7 @@
 import json
 import threading
 import os
+import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from crewai import Crew, Process
 from config import get_target_cities, MAX_LEADS_BATCH
@@ -78,8 +79,9 @@ def main():
         print(f"\n--- HUMAN-IN-THE-LOOP GATE TRIGGERED ---")
         print(f"You have {pending_count} pending/drafted leads, which meets/exceeds the max batch of {MAX_LEADS_BATCH}.")
         print("Please review and dispatch these emails by running: python dispatcher.py")
-        print("Exiting...")
-        return
+        print("Pausing engine. Keeping container alive for health checks...")
+        while True:
+            time.sleep(3600)
         
     # 3. Setup Crew
     print("Setting up AI Crew...")
@@ -113,6 +115,10 @@ def main():
     if new_pending_count >= MAX_LEADS_BATCH:
         print(f"\n--- HUMAN-IN-THE-LOOP GATE TRIGGERED ---")
         print(f"You now have {new_pending_count} drafted leads ready for review.")
+
+    print("\nEngine process complete. Keeping container alive for health checks...")
+    while True:
+        time.sleep(3600)
 
 if __name__ == "__main__":
     main()
