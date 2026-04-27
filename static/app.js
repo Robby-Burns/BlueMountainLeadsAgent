@@ -52,10 +52,13 @@ function renderLeads(leads) {
             <div class="tech-gap">⚠️ ${lead.tech_gap || 'Unknown Gap'}</div>
             <div class="email-preview" id="preview-${lead.id}">${lead.email_draft}</div>
             
+            <div class="card-actions">
             ${isSent 
-                ? '<div class="status-badge sent">✓ Dispatched</div>'
-                : '<button class="btn primary" onclick="openDispatchModal(' + lead.id + ', \'' + lead.business_name.replace(/'/g, "\\'") + '\')">Approve & Send</button>'
+                ? '<div class="status-badge sent" style="flex:1;">✓ Dispatched</div>'
+                : `<button class="btn primary" onclick="openDispatchModal(${lead.id}, '${lead.business_name.replace(/'/g, "\\'")}')">Approve & Send</button>
+                   <button class="btn danger" onclick="rejectLead(${lead.id})">Reject</button>`
             }
+            </div>
         `;
         grid.appendChild(card);
     });
@@ -99,6 +102,22 @@ async function runCrew() {
 
     } catch (err) {
         console.error('Failed to run crew:', err);
+    }
+}
+
+async function rejectLead(leadId) {
+    if (!confirm('Are you sure you want to reject this lead? It will be permanently removed from the dashboard.')) return;
+    
+    try {
+        const response = await fetch('/api/reject/' + leadId, { method: 'POST' });
+        if (response.ok) {
+            fetchLeads(); // Refresh grid instantly
+        } else {
+            const res = await response.json();
+            alert(res.detail || 'Failed to reject lead');
+        }
+    } catch (err) {
+        console.error('Failed to reject:', err);
     }
 }
 

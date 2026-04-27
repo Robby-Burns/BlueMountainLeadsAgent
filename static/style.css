@@ -102,6 +102,15 @@ body {
 .btn.secondary:hover {
     background: rgba(255, 255, 255, 0.05);
 }
+.btn.danger {
+    background: rgba(239, 68, 68, 0.1);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+}
+.btn.danger:hover {
+    background: rgba(239, 68, 68, 0.2);
+    transform: translateY(-2px);
+}
 
 /* Main Container */
 .container {
@@ -194,6 +203,15 @@ body {
     background: rgba(16, 185, 129, 0.1);
     color: var(--success);
     border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.card-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: auto;
+}
+.card-actions .btn {
+    flex: 1;
 }
 
 /* Modal */

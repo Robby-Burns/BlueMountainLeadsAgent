@@ -45,7 +45,7 @@ def get_status():
 @app.get("/api/leads")
 def get_leads():
     session = get_session()
-    leads = session.query(Lead).order_by(Lead.created_at.desc()).all()
+    leads = session.query(Lead).filter(Lead.email_status != 'Rejected').order_by(Lead.created_at.desc()).all()
     
     return [
         {
@@ -155,6 +155,17 @@ def dispatch_email(lead_id: int, req: DispatchRequest):
     except Exception as e:
         session.rollback()
         raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
+
+@app.post("/api/reject/{lead_id}")
+def reject_lead(lead_id: int):
+    session = get_session()
+    lead = session.query(Lead).filter_by(id=lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+        
+    lead.email_status = 'Rejected'
+    session.commit()
+    return {"message": "Lead rejected."}
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
