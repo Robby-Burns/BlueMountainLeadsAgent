@@ -8,7 +8,9 @@ dependencies = [
     "sqlalchemy>=2.0.0",
     "psycopg2-binary>=2.9.0",
     "python-dotenv>=1.0.0",
-    "resend>=0.8.0"
+    "resend>=0.8.0",
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.0"
 ]
 
 [project.optional-dependencies]

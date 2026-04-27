@@ -1,10 +1,13 @@
-import json
-import threading
 import os
-import time
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+import uvicorn
+from fastapi import FastAPI, BackgroundTasks, HTTPException
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+
 from crewai import Crew, Process
-from config import get_target_cities, MAX_LEADS_BATCH
+from config import get_target_cities, MAX_LEADS_BATCH, RESEND_API_KEY
 from database import init_db, get_session, Lead, save_leads_gracefully
 from agents import (
     create_regional_scout, 
@@ -15,110 +18,136 @@ from agents import (
     create_drafting_task
 )
 
-# --- Health Check Server ---
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == '/health':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b"OK")
-        else:
-            self.send_response(404)
-            self.end_headers()
-            
-    def log_message(self, format, *args):
-        pass # Silence logging to keep CrewAI console clean
+app = FastAPI(title="BlueMountain Lead Engine")
 
-def start_health_server():
-    port = int(os.environ.get("PORT", 8080))
-    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    return port
+# Ensure static dir exists
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
-def process_crew_output(result, session):
-    """
-    Parses the Pydantic output from the Crew and saves drafted leads to the database.
-    """
-    leads_data = []
-    if not result or not hasattr(result, 'pydantic') or not result.pydantic:
-        print("Crew did not return valid Pydantic output. Falling back to raw JSON parsing if possible...")
-        try:
-            raw = getattr(result, 'raw', str(result))
-            clean_json = raw.strip()
-            if clean_json.startswith("```json"):
-                clean_json = clean_json[7:-3]
-            elif clean_json.startswith("```"):
-                clean_json = clean_json[3:-3]
-            leads_data = json.loads(clean_json)
-        except Exception as e:
-            print(f"Failed to process output entirely. Error: {e}")
-            return
-    else:
-        # Pydantic is safely accessible
-        leads_data = [lead.dict() for lead in result.pydantic.leads]
-
-    saved_count = save_leads_gracefully(session, leads_data)
-    print(f"Successfully saved {saved_count} new drafted leads to the database.")
-
-def main():
-    print("Initializing Blue Mountain Digital Marketing Lead Engine...")
-    port = start_health_server()
-    print(f"Started background /health server on port {port}.")
-    
-    # 1. Initialize Database
+# Initialize DB on startup
+@app.on_event("startup")
+def startup_event():
     init_db()
-    session = get_session()
-    
-    # 2. Check HitL / Batch limits before running
-    # Count how many Pending/Drafted leads we currently have.
-    pending_count = session.query(Lead).filter(Lead.email_status.in_(['Pending', 'Drafted'])).count()
-    
-    if pending_count >= MAX_LEADS_BATCH:
-        print(f"\n--- HUMAN-IN-THE-LOOP GATE TRIGGERED ---")
-        print(f"You have {pending_count} pending/drafted leads, which meets/exceeds the max batch of {MAX_LEADS_BATCH}.")
-        print("Please review and dispatch these emails by running: python dispatcher.py")
-        print("Pausing engine. Keeping container alive for health checks...")
-        while True:
-            time.sleep(3600)
-        
-    # 3. Setup Crew
-    print("Setting up AI Crew...")
-    scout = create_regional_scout()
-    auditor = create_technical_auditor()
-    strategist = create_local_strategist()
-    
-    target_cities = get_target_cities()
-    
-    discovery = create_discovery_task(scout, target_cities)
-    audit = create_audit_task(auditor, discovery)
-    drafting = create_drafting_task(strategist, audit)
-    
-    crew = Crew(
-        agents=[scout, auditor, strategist],
-        tasks=[discovery, audit, drafting],
-        process=Process.sequential,
-        verbose=True
-    )
-    
-    # 4. Run the Crew
-    print(f"Kicking off crew for cities: {', '.join(target_cities)}...")
-    result = crew.kickoff()
-    
-    # 5. Save Results
-    print("Crew finished. Processing results...")
-    process_crew_output(result, session)
-    
-    # Check if we hit the limit after saving
-    new_pending_count = session.query(Lead).filter(Lead.email_status.in_(['Pending', 'Drafted'])).count()
-    if new_pending_count >= MAX_LEADS_BATCH:
-        print(f"\n--- HUMAN-IN-THE-LOOP GATE TRIGGERED ---")
-        print(f"You now have {new_pending_count} drafted leads ready for review.")
 
-    print("\nEngine process complete. Keeping container alive for health checks...")
-    while True:
-        time.sleep(3600)
+@app.get("/")
+def read_root():
+    return FileResponse("static/index.html")
+
+@app.get("/health")
+def health_check():
+    return "OK"
+
+@app.get("/api/leads")
+def get_leads():
+    session = get_session()
+    leads = session.query(Lead).order_by(Lead.created_at.desc()).all()
+    
+    return [
+        {
+            "id": lead.id,
+            "business_name": lead.business_name,
+            "city": lead.city,
+            "state": lead.state,
+            "tech_gap": lead.tech_gap,
+            "email_status": lead.email_status,
+            "email_draft": lead.email_draft,
+            "created_at": lead.created_at
+        } for lead in leads
+    ]
+
+# Keep track if crew is running
+is_crew_running = False
+
+def run_crew_job():
+    global is_crew_running
+    try:
+        session = get_session()
+        pending_count = session.query(Lead).filter(Lead.email_status.in_(['Pending', 'Drafted'])).count()
+        if pending_count >= MAX_LEADS_BATCH:
+            print("HitL limit reached. Aborting crew run.")
+            return
+
+        print("Setting up AI Crew...")
+        scout = create_regional_scout()
+        auditor = create_technical_auditor()
+        strategist = create_local_strategist()
+        
+        target_cities = get_target_cities()
+        
+        discovery = create_discovery_task(scout, target_cities)
+        audit = create_audit_task(auditor, discovery)
+        drafting = create_drafting_task(strategist, audit)
+        
+        crew = Crew(
+            agents=[scout, auditor, strategist],
+            tasks=[discovery, audit, drafting],
+            process=Process.sequential,
+            verbose=True
+        )
+        
+        result = crew.kickoff()
+        
+        leads_data = []
+        if not result or not hasattr(result, 'pydantic') or not result.pydantic:
+            try:
+                raw = getattr(result, 'raw', str(result))
+                clean_json = raw.strip()
+                if clean_json.startswith("```json"):
+                    clean_json = clean_json[7:-3]
+                elif clean_json.startswith("```"):
+                    clean_json = clean_json[3:-3]
+                leads_data = json.loads(clean_json)
+            except Exception as e:
+                print(f"Failed to process output entirely. Error: {e}")
+        else:
+            leads_data = [lead.dict() for lead in result.pydantic.leads]
+
+        save_leads_gracefully(session, leads_data)
+        
+    finally:
+        is_crew_running = False
+
+@app.post("/api/run-crew")
+def trigger_crew(background_tasks: BackgroundTasks):
+    global is_crew_running
+    if is_crew_running:
+        raise HTTPException(status_code=400, detail="Crew is already running.")
+    
+    is_crew_running = True
+    background_tasks.add_task(run_crew_job)
+    return {"message": "Crew AI Engine started in the background."}
+
+class DispatchRequest(BaseModel):
+    contact_email: str
+
+@app.post("/api/dispatch/{lead_id}")
+def dispatch_email(lead_id: int, req: DispatchRequest):
+    session = get_session()
+    lead = session.query(Lead).filter_by(id=lead_id).first()
+    if not lead:
+        raise HTTPException(status_code=404, detail="Lead not found")
+        
+    if not RESEND_API_KEY:
+        raise HTTPException(status_code=500, detail="RESEND_API_KEY not set. Check .env")
+        
+    try:
+        import resend
+        resend.api_key = RESEND_API_KEY
+        
+        resend.Emails.send({
+            "from": "Acquisition <hello@bluemountaindigital.com>", 
+            "to": req.contact_email,
+            "subject": f"Quick question about {lead.business_name}'s website",
+            "text": lead.email_draft
+        })
+        
+        lead.email_status = 'Sent'
+        session.commit()
+        return {"message": "Email sent successfully."}
+    except Exception as e:
+        session.rollback()
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {str(e)}")
 
 if __name__ == "__main__":
-    main()
+    port = int(os.environ.get("PORT", 8080))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=False)
