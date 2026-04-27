@@ -1,5 +1,6 @@
 import json
 import threading
+import os
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from crewai import Crew, Process
 from config import get_target_cities, MAX_LEADS_BATCH
@@ -29,9 +30,11 @@ class HealthCheckHandler(BaseHTTPRequestHandler):
         pass # Silence logging to keep CrewAI console clean
 
 def start_health_server():
-    server = HTTPServer(('0.0.0.0', 8080), HealthCheckHandler)
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), HealthCheckHandler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
+    return port
 
 def process_crew_output(result, session):
     """
@@ -60,8 +63,8 @@ def process_crew_output(result, session):
 
 def main():
     print("Initializing Blue Mountain Digital Marketing Lead Engine...")
-    start_health_server()
-    print("Started background /health server on port 8080.")
+    port = start_health_server()
+    print(f"Started background /health server on port {port}.")
     
     # 1. Initialize Database
     init_db()
