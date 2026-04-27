@@ -83,6 +83,7 @@ def save_leads_gracefully(session, leads_data):
                     business_name=lead_data.get('business_name'),
                     city=lead_data.get('city'),
                     state=lead_data.get('state', 'WA'),
+                    source_url=lead_data.get('website_url'),
                     tech_gap=lead_data.get('verified_tech_gap', lead_data.get('tech_gap')),
                     email_draft=lead_data.get('email_draft'),
                     email_status="Drafted"

@@ -37,6 +37,11 @@ def read_root():
 def health_check():
     return "OK"
 
+@app.get("/api/status")
+def get_status():
+    global is_crew_running
+    return {"is_crew_running": is_crew_running}
+
 @app.get("/api/leads")
 def get_leads():
     session = get_session()
@@ -48,6 +53,7 @@ def get_leads():
             "business_name": lead.business_name,
             "city": lead.city,
             "state": lead.state,
+            "source_url": lead.source_url,
             "tech_gap": lead.tech_gap,
             "email_status": lead.email_status,
             "email_draft": lead.email_draft,
@@ -119,6 +125,7 @@ def trigger_crew(background_tasks: BackgroundTasks):
 
 class DispatchRequest(BaseModel):
     contact_email: str
+    email_draft: str
 
 @app.post("/api/dispatch/{lead_id}")
 def dispatch_email(lead_id: int, req: DispatchRequest):
@@ -138,9 +145,10 @@ def dispatch_email(lead_id: int, req: DispatchRequest):
             "from": "Acquisition <hello@bluemountaindigital.com>", 
             "to": req.contact_email,
             "subject": f"Quick question about {lead.business_name}'s website",
-            "text": lead.email_draft
+            "text": req.email_draft
         })
         
+        lead.email_draft = req.email_draft # Save the edited draft back to db
         lead.email_status = 'Sent'
         session.commit()
         return {"message": "Email sent successfully."}

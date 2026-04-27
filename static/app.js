@@ -1,8 +1,12 @@
 document.addEventListener('DOMContentLoaded', () => {
     fetchLeads();
+    checkStatus();
     
-    // Refresh leads every 10 seconds
-    setInterval(fetchLeads, 10000);
+    // Refresh leads and status every 10 seconds
+    setInterval(() => {
+        fetchLeads();
+        checkStatus();
+    }, 10000);
 
     const runCrewBtn = document.getElementById('runCrewBtn');
     runCrewBtn.addEventListener('click', runCrew);
@@ -40,10 +44,13 @@ function renderLeads(leads) {
         card.innerHTML = `
             <div class="card-header">
                 <h3>${lead.business_name}</h3>
-                <div class="location">${lead.city}, ${lead.state}</div>
+                <div class="location">
+                    ${lead.city}, ${lead.state}
+                    ${lead.source_url ? ` | <a href="${lead.source_url}" target="_blank" style="color:var(--accent);">View Website</a>` : ''}
+                </div>
             </div>
             <div class="tech-gap">⚠️ ${lead.tech_gap || 'Unknown Gap'}</div>
-            <div class="email-preview">${lead.email_draft}</div>
+            <div class="email-preview" id="preview-${lead.id}">${lead.email_draft}</div>
             
             ${isSent 
                 ? '<div class="status-badge sent">✓ Dispatched</div>'
@@ -54,39 +61,44 @@ function renderLeads(leads) {
     });
 }
 
+async function checkStatus() {
+    try {
+        const response = await fetch('/api/status');
+        const status = await response.json();
+        
+        const btn = document.getElementById('runCrewBtn');
+        const text = btn.querySelector('.btn-text');
+        const loader = btn.querySelector('.loader');
+
+        if (status.is_crew_running) {
+            text.textContent = 'Running Agents...';
+            loader.classList.remove('hidden');
+            btn.disabled = true;
+        } else {
+            text.textContent = 'Run AI Crew';
+            loader.classList.add('hidden');
+            btn.disabled = false;
+        }
+    } catch (err) {
+        console.error('Failed to check status:', err);
+    }
+}
+
 async function runCrew() {
-    const btn = document.getElementById('runCrewBtn');
-    const text = btn.querySelector('.btn-text');
-    const loader = btn.querySelector('.loader');
-
-    text.textContent = 'Running Agents...';
-    loader.classList.remove('hidden');
-    btn.disabled = true;
-
     try {
         const response = await fetch('/api/run-crew', { method: 'POST' });
         const result = await response.json();
         
         if (!response.ok) {
             alert(result.detail || 'Failed to start crew');
-            text.textContent = 'Run AI Crew';
-            loader.classList.add('hidden');
-            btn.disabled = false;
             return;
         }
 
-        // Leave it spinning for a bit to indicate background work
-        setTimeout(() => {
-            text.textContent = 'Run AI Crew';
-            loader.classList.add('hidden');
-            btn.disabled = false;
-        }, 5000);
+        // Instantly check status to update UI
+        checkStatus();
 
     } catch (err) {
         console.error('Failed to run crew:', err);
-        text.textContent = 'Run AI Crew';
-        loader.classList.add('hidden');
-        btn.disabled = false;
     }
 }
 
@@ -94,6 +106,10 @@ function openDispatchModal(leadId, businessName) {
     document.getElementById('modalLeadId').value = leadId;
     document.getElementById('modalBusinessName').textContent = businessName;
     document.getElementById('contactEmail').value = '';
+    
+    // Pre-fill the editable text area with the specific draft text
+    const draftText = document.getElementById('preview-' + leadId).textContent;
+    document.getElementById('emailDraft').value = draftText;
     
     const modal = document.getElementById('dispatchModal');
     modal.classList.remove('hidden');
@@ -109,6 +125,7 @@ async function handleDispatchSubmit(e) {
     
     const leadId = document.getElementById('modalLeadId').value;
     const email = document.getElementById('contactEmail').value;
+    const editedDraft = document.getElementById('emailDraft').value;
     const submitBtn = e.target.querySelector('button[type="submit"]');
     
     submitBtn.disabled = true;
@@ -118,7 +135,10 @@ async function handleDispatchSubmit(e) {
         const response = await fetch('/api/dispatch/' + leadId, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ contact_email: email })
+            body: JSON.stringify({ 
+                contact_email: email,
+                email_draft: editedDraft
+            })
         });
         
         const result = await response.json();

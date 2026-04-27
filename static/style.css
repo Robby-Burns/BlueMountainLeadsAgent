@@ -235,7 +235,8 @@ body {
     font-size: 0.85rem;
     color: var(--text-muted);
 }
-.form-group input {
+.form-group input,
+.form-group textarea {
     width: 100%;
     background: rgba(0,0,0,0.3);
     border: 1px solid var(--border-glass);
@@ -245,8 +246,10 @@ body {
     font-family: inherit;
     outline: none;
     transition: border-color 0.3s ease;
+    resize: vertical;
 }
-.form-group input:focus {
+.form-group input:focus,
+.form-group textarea:focus {
     border-color: var(--accent);
 }
 

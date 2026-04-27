@@ -23,6 +23,7 @@ class LeadOutput(BaseModel):
     business_name: str
     city: str
     state: Optional[str] = "WA"
+    website_url: Optional[str] = None
     verified_tech_gap: str
     email_draft: str
 
@@ -126,7 +127,7 @@ def create_drafting_task(strategist_agent: Agent, audit_task: Task) -> Task:
         3. Position Blue Mountain Digital Marketing as the #1 local expert in the Columbia Basin ready to help.
         4. Include a clear, low-pressure call to action.
         """,
-        expected_output="A JSON array of objects, where each object contains the business_name, city, verified_tech_gap, and the final email_draft.",
+        expected_output="A JSON array of objects, where each object contains the business_name, city, website_url, verified_tech_gap, and the final email_draft.",
         agent=strategist_agent,
         context=[audit_task],
         output_pydantic=LeadListOutput
