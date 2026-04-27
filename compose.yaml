@@ -1,0 +1,49 @@
+version: '3.8'
+
+services:
+  # The Core Orchestrator
+  lead-engine:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/bluemountain
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # The Human-in-the-Loop Dispatcher
+  # Run this interactively using: docker compose run dispatcher
+  dispatcher:
+    build: .
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=postgresql://user:pass@db:5432/bluemountain
+    command: ["python", "dispatcher.py"]
+    depends_on:
+      db:
+        condition: service_healthy
+    # stdin_open and tty are required for the `input()` prompts in dispatcher.py
+    stdin_open: true
+    tty: true
+
+  # PostgreSQL Database
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=pass
+      - POSTGRES_DB=bluemountain
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d bluemountain"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  pgdata:

@@ -1,0 +1,18 @@
+[project]
+name = "bluemountain"
+version = "0.1.0"
+requires-python = ">=3.14"
+dependencies = [
+    "crewai>=0.28.0",
+    "crewai-tools>=0.1.0",
+    "sqlalchemy>=2.0.0",
+    "psycopg2-binary>=2.9.0",
+    "python-dotenv>=1.0.0",
+    "resend>=0.8.0"
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-mock"
+]
